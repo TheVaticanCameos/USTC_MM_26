@@ -13,6 +13,12 @@
   - 值为 `0` 表示 i 与 j 之间不可直达（或 i=j）
   - 已剔除孤立点（度为 0 的站点）
 
+- `Beijing-2010-station-lines.txt`
+  - 两列：`station`、`lines`（TSV 格式）
+  - `station` 与 `station-id-map.tsv` 中的 `name` 一一对应
+  - `lines` 为该站所属线路，多条线路用逗号分隔（如 `Line2,Line13,AirportExpress`）
+  - 可用于判断换乘：相邻两站若不共享任何线路，则需要换乘
+
 - `Beijing-2010-network.svg`
   - 使用经纬度坐标绘制的网络示意图（SVG，可直接用浏览器打开）
 

@@ -32,6 +32,18 @@
   - `A[i, j] = 0`：不可直达（或 `i=j`）
 - 矩阵为对称矩阵（无向图）
 
+## 线路信息（station-lines.txt）
+
+文件名：`<City>-<Year>-station-lines.txt`
+
+- 制表符分隔（TSV），首行为表头
+- 两列：
+  - `station`：站点名称，与 `station-id-map.tsv` 中的 `name` 一一对应
+  - `lines`：该站所属的地铁线路，多条线路用逗号分隔（如 `Line2,Line13,AirportExpress`）
+- 可用于判断换乘：相邻两站若不共享任何线路，则需要换乘
+
+> **注意**：目前仅 Beijing 提供了线路信息。
+
 ## 可视化（network.svg）
 
 文件名：`<City>-<Year>-network.svg`
