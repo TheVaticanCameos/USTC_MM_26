@@ -127,11 +127,14 @@ def sir_simulation(G, seeds, beta=0.3, gamma=0.1, max_steps=5):
 1. 初始化所有节点为 `'S'`，将 `seeds` 中的节点设为 `'I'`
 2. 每一步遍历所有传播者（I），对其每个未知邻居（S）以概率 $\beta$ 传播信息
 3. 每个传播者以概率 $\gamma$ 变为已阅者（R），不再转发
-4. 记录每步的状态快照，直到没有传播者或达到 `max_steps`
+4. 记录每步的状态，直到没有传播者或达到 `max_steps`
 
 ## Python 框架
 
 我们提供了一个交互式可视化框架，包含完整的 GUI 界面。你只需要在算法模块和 GUI 模块中补全核心函数即可。模板仅供参考，欢迎实现更 fancy 的版本。
+下面是一个演示视频：
+
+https://github.com/user-attachments/assets/a2912758-506c-4437-b337-d6eb7c47ded4
 
 ### 环境配置
 
