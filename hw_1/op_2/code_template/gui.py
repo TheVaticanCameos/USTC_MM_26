@@ -92,6 +92,7 @@ class MetroApp:
     """基于 Tkinter 的交互式地铁路径规划界面。"""
 
     BG_COLOR = "#f5f5f5"
+    PANEL_COLOR = "#ffffff"
     EDGE_COLOR = "#bdbdbd"
     NODE_COLOR = "#90caf9"
     NODE_EDGE_COLOR = "#1565c0"
@@ -109,33 +110,83 @@ class MetroApp:
         self.metro: MetroSystem | None = None
         self.pos: dict[int, tuple[float, float]] = {}
 
+        # 视图交互状态
+        self._dragging = False
+        self._drag_start_pixels: tuple[float, float] | None = None
+        self._drag_start_view: dict[str, tuple[float, float]] | None = None
+        self._view_initialized = False
+        self._base_view_span: tuple[float, float] | None = None
+        self._status_var = None
+
         self._build_ui()
 
     # ================================================================
     # UI 构建
     # ================================================================
 
+    def _configure_styles(self):
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        style.configure("App.TFrame", background=self.BG_COLOR)
+        style.configure("Card.TFrame", background=self.PANEL_COLOR)
+        style.configure("TLabel", background=self.BG_COLOR, font=("Segoe UI", 10))
+        style.configure("TButton", font=("Segoe UI", 10), padding=(8, 5))
+        style.configure("TCombobox", padding=4)
+        style.configure("TLabelframe", background=self.BG_COLOR)
+        style.configure("TLabelframe.Label", background=self.BG_COLOR, font=("Segoe UI", 10, "bold"))
+
     def _build_ui(self):
         self.root = tk.Tk()
+        self._status_var = tk.StringVar(master=self.root, value="Ready")
         self.root.title("Metro Shortest Path Finder")
         self.root.configure(bg=self.BG_COLOR)
         self.root.geometry("1400x850")
+
+        self._configure_styles()
 
         self.root.columnconfigure(0, weight=1)
         self.root.columnconfigure(1, weight=0, minsize=self.SIDEBAR_WIDTH)
         self.root.rowconfigure(0, weight=1)
 
-        canvas_frame = ttk.Frame(self.root)
-        canvas_frame.grid(row=0, column=0, sticky="nsew")
+        canvas_frame = ttk.Frame(self.root, style="App.TFrame")
+        canvas_frame.grid(row=0, column=0, sticky="nsew", padx=(5, 0), pady=5)
+        canvas_frame.columnconfigure(0, weight=1)
+        canvas_frame.rowconfigure(1, weight=1)
+
+        toolbar_frame = ttk.Frame(canvas_frame, style="App.TFrame")
+        toolbar_frame.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+
+        plot_frame = ttk.Frame(canvas_frame, style="Card.TFrame")
+        plot_frame.grid(row=1, column=0, sticky="nsew")
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+
+        status_frame = ttk.Frame(canvas_frame, style="App.TFrame")
+        status_frame.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+
         self.fig = Figure(figsize=(10, 7), dpi=100, facecolor=self.BG_COLOR)
         self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=canvas_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
+        self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
 
-        sidebar = ttk.Frame(self.root, width=self.SIDEBAR_WIDTH)
+        self._build_plot_toolbar(toolbar_frame)
+        ttk.Label(status_frame, textvariable=self._status_var, anchor="w").pack(fill=tk.X)
+
+        sidebar = ttk.Frame(self.root, width=self.SIDEBAR_WIDTH, style="App.TFrame")
         sidebar.grid(row=0, column=1, sticky="nsew", padx=(0, 5), pady=5)
         sidebar.grid_propagate(False)
         self._build_sidebar(sidebar)
+
+        self._bind_canvas_events()
+
+    def _build_plot_toolbar(self, parent: ttk.Frame):
+        ttk.Button(parent, text="Zoom In", command=lambda: self._zoom(0.85)).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(parent, text="Zoom Out", command=lambda: self._zoom(1.18)).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(parent, text="Fit View", command=self._fit_view).pack(side=tk.LEFT, padx=(0, 6))
 
     def _build_sidebar(self, sidebar: ttk.Frame):
         px, py = 10, 6
@@ -180,6 +231,150 @@ class MetroApp:
         self.output_text.pack(fill=tk.BOTH, expand=True)
 
     # ================================================================
+    # 视图交互
+    # ================================================================
+
+    def _bind_canvas_events(self):
+        self.canvas.mpl_connect("scroll_event", self._on_scroll)
+        self.canvas.mpl_connect("button_press_event", self._on_mouse_press)
+        self.canvas.mpl_connect("button_release_event", self._on_mouse_release)
+        self.canvas.mpl_connect("motion_notify_event", self._on_mouse_move)
+
+    def _on_scroll(self, event):
+        if event.inaxes != self.ax:
+            return
+        scale = 0.9 if event.button == "up" else 1.1
+        self._zoom(scale, center=(event.xdata, event.ydata))
+
+    def _on_mouse_press(self, event):
+        if event.inaxes != self.ax or event.button != 1:
+            return
+        if event.x is None or event.y is None:
+            return
+        self._dragging = True
+        self._drag_start_pixels = (event.x, event.y)
+        self._drag_start_view = self._get_view_state()
+
+    def _on_mouse_release(self, _event):
+        self._dragging = False
+        self._drag_start_pixels = None
+        self._drag_start_view = None
+
+    def _on_mouse_move(self, event):
+        if not self._dragging:
+            return
+        if event.x is None or event.y is None:
+            return
+        if self._drag_start_pixels is None or self._drag_start_view is None:
+            return
+
+        start_x, start_y = self._drag_start_pixels
+        dx_pix = event.x - start_x
+        dy_pix = event.y - start_y
+
+        x0, x1 = self._drag_start_view["xlim"]
+        y0, y1 = self._drag_start_view["ylim"]
+        bbox = self.ax.bbox
+        if bbox.width <= 1 or bbox.height <= 1:
+            return
+
+        dx_data = dx_pix * (x1 - x0) / bbox.width
+        dy_data = dy_pix * (y1 - y0) / bbox.height
+
+        self.ax.set_xlim(x0 - dx_data, x1 - dx_data)
+        self.ax.set_ylim(y0 - dy_data, y1 - dy_data)
+        self._apply_dynamic_text_scale()
+        self.canvas.draw_idle()
+
+    def _zoom(self, scale_factor: float, center=None):
+        if not self.pos:
+            return
+
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        width = x1 - x0
+        height = y1 - y0
+        if abs(width) < 1e-12 or abs(height) < 1e-12:
+            return
+
+        if center is None:
+            cx = (x0 + x1) / 2
+            cy = (y0 + y1) / 2
+            relx = 0.5
+            rely = 0.5
+        else:
+            cx, cy = center
+            if cx is None or cy is None:
+                return
+            relx = (cx - x0) / width
+            rely = (cy - y0) / height
+
+        new_width = width * scale_factor
+        new_height = height * scale_factor
+
+        self.ax.set_xlim(cx - relx * new_width, cx + (1 - relx) * new_width)
+        self.ax.set_ylim(cy - rely * new_height, cy + (1 - rely) * new_height)
+        self._apply_dynamic_text_scale()
+        self.canvas.draw_idle()
+
+    def _fit_view(self):
+        if not self.pos:
+            return
+
+        xs = [p[0] for p in self.pos.values()]
+        ys = [p[1] for p in self.pos.values()]
+        pad_x = max((max(xs) - min(xs)) * 0.08, 0.03)
+        pad_y = max((max(ys) - min(ys)) * 0.08, 0.03)
+
+        xlim = (min(xs) - pad_x, max(xs) + pad_x)
+        ylim = (min(ys) - pad_y, max(ys) + pad_y)
+        self.ax.set_xlim(*xlim)
+        self.ax.set_ylim(*ylim)
+        self._base_view_span = (xlim[1] - xlim[0], ylim[1] - ylim[0])
+        self._apply_dynamic_text_scale()
+        self.canvas.draw_idle()
+
+    def _get_view_state(self):
+        return {"xlim": self.ax.get_xlim(), "ylim": self.ax.get_ylim()}
+
+    def _set_view_state(self, state):
+        if not state:
+            return
+        self.ax.set_xlim(*state["xlim"])
+        self.ax.set_ylim(*state["ylim"])
+
+
+    def _current_zoom_factor(self) -> float:
+        if self._base_view_span is None:
+            return 1.0
+        base_w, base_h = self._base_view_span
+        cur_x0, cur_x1 = self.ax.get_xlim()
+        cur_y0, cur_y1 = self.ax.get_ylim()
+        cur_w = max(abs(cur_x1 - cur_x0), 1e-12)
+        cur_h = max(abs(cur_y1 - cur_y0), 1e-12)
+        zx = base_w / cur_w
+        zy = base_h / cur_h
+        return max(zx, zy)
+
+    @staticmethod
+    def _clamp(value: float, lo: float, hi: float) -> float:
+        return max(lo, min(hi, value))
+
+    def _apply_dynamic_text_scale(self):
+        zoom = self._current_zoom_factor()
+        factor = zoom ** 0.45
+
+        station_size = self._clamp(5.5 * factor, 4.0, 12.0)
+        endpoint_size = self._clamp(7.5 * factor, 5.0, 13.0)
+
+        for text in self.ax.texts:
+            gid = text.get_gid()
+            if gid == "station_label":
+                text.set_fontsize(station_size)
+            elif gid == "endpoint_label":
+                text.set_fontsize(endpoint_size)
+
+    # ================================================================
     # 事件处理
     # ================================================================
 
@@ -196,10 +391,13 @@ class MetroApp:
         n_nodes = self.metro.graph.number_of_nodes()
         if n_nodes > 0:
             self.pos = spring_layout(self.metro.graph)
+            self._view_initialized = False
         else:
             self.pos = {}
+            self._view_initialized = False
 
         self._draw_base()
+        self._status_var.set(f"Loaded {city}")
         self._log("Loaded {}: {} stations, {} edges".format(
             city, len(self.metro.stations), self.metro.graph.number_of_edges()))
         if n_nodes == 0:
@@ -218,14 +416,17 @@ class MetroApp:
         src_name = self.src_var.get()
         dst_name = self.dst_var.get()
         if not src_name or not dst_name:
+            self._status_var.set("Please select both source and destination")
             self._log("Please select both a source and a destination station.")
             return
         if src_name == dst_name:
+            self._status_var.set("Source and destination are the same")
             self._log("Source and destination are the same station.")
             return
 
         cost, path = self.metro.shortest_path(src_name, dst_name)
         if not path:
+            self._status_var.set("No path found")
             self._log("No path found from {} to {}.".format(src_name, dst_name))
             if self.metro.graph.number_of_nodes() == 0:
                 self._log("  [Hint] build_graph() or dijkstra() not yet implemented?")
@@ -236,6 +437,7 @@ class MetroApp:
         self.canvas.draw_idle()
 
         names = [self.metro.stations[nid] for nid in path]
+        self._status_var.set(f"Route found: {len(path)} stations, {cost:.3f} km")
         self._log(
             "{line}\n"
             "  {src}  ->  {dst}\n"
@@ -255,18 +457,21 @@ class MetroApp:
             self._draw_base()
             self.canvas.draw_idle()
         self.output_text.delete("1.0", tk.END)
+        self._status_var.set("Reset")
 
     def _draw_base(self):
         """绘制底层地铁网络。"""
+        view_state = self._get_view_state() if self._view_initialized else None
+
         self.ax.clear()
         self.ax.set_facecolor(self.BG_COLOR)
 
         if not self.pos:
             self.ax.set_title("{} Metro Network".format(
                 self.metro.city if self.metro else ""),
-                fontsize=14, fontweight="bold")
+                fontsize=7.0, fontweight="bold", pad=16)
             self.ax.axis("off")
-            self.fig.tight_layout()
+            self.fig.subplots_adjust(left=0.02, right=0.98, bottom=0.03, top=0.88)
             self.canvas.draw_idle()
             return
 
@@ -289,11 +494,17 @@ class MetroApp:
                         edgecolors=self.NODE_EDGE_COLOR, linewidths=0.4, zorder=3)
 
         self.ax.set_title("{} Metro Network".format(self.metro.city),
-                          fontsize=14, fontweight="bold")
+                          fontsize=7.0, fontweight="bold", pad=16)
         self.ax.axis("off")
-        self.ax.set_xlim(-0.02, 1.02)
-        self.ax.set_ylim(-0.02, 1.02)
-        self.fig.tight_layout()
+
+        if view_state is not None:
+            self._set_view_state(view_state)
+        else:
+            self._fit_view()
+            self._view_initialized = True
+
+        self._apply_dynamic_text_scale()
+        self.fig.subplots_adjust(left=0.02, right=0.98, bottom=0.03, top=0.88)
         self.canvas.draw_idle()
 
     def _annotate_station(self, nid, color, marker, label, size=180):
@@ -302,13 +513,14 @@ class MetroApp:
         x, y = self.pos[nid]
         self.ax.scatter(x, y, s=size, c=color, marker=marker,
                         zorder=5, edgecolors="white", linewidths=2)
-        self.ax.annotate(
+        ann = self.ax.annotate(
             "[{}] {}".format(label, self.metro.stations[nid]), (x, y),
             textcoords="offset points", xytext=(8, 8),
-            fontsize=8, fontweight="bold", color=color,
+            fontsize=7.5, fontweight="bold", color=color,
             bbox=dict(boxstyle="round,pad=0.2", fc="white",
                       alpha=0.85, ec=color, lw=0.8),
         )
+        ann.set_gid("endpoint_label")
 
     def _highlight_endpoints(self):
         for var, color, marker, label in [
@@ -346,9 +558,10 @@ class MetroApp:
         for nid in path:
             if nid in self.pos:
                 x, y = self.pos[nid]
-                self.ax.text(x, y, stations[nid], fontsize=6, fontweight="bold",
-                             color=self.PATH_NODE_EDGE, ha="center", va="bottom",
-                             transform=self.ax.transData)
+                txt = self.ax.text(x, y, stations[nid], fontsize=5.5, fontweight="bold",
+                                   color=self.PATH_NODE_EDGE, ha="center", va="bottom",
+                                   transform=self.ax.transData)
+                txt.set_gid("station_label")
 
         # 起终点标记
         self._annotate_station(path[0], self.SRC_COLOR, "o", "From", size=220)
@@ -356,10 +569,10 @@ class MetroApp:
 
         self.ax.set_title(
             "{city} Metro Network\n"
-            "Shortest Path: {src} -> {dst}  (distance = {cost:.3f} km)".format(
+            "Shortest Path: {src} -> {dst}\n(distance = {cost:.3f} km)".format(
                 city=self.metro.city,
                 src=stations[path[0]], dst=stations[path[-1]], cost=cost),
-            fontsize=13, fontweight="bold",
+            fontsize=7.0, fontweight="bold", pad=18,
         )
 
     # ================================================================
