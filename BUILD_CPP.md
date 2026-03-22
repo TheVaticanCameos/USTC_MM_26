@@ -146,6 +146,6 @@ cmake --build build --config Release --parallel 4
 
 每道题的 `code_template_cpp/` 目录下均有独立的 `CMakeLists.txt`。使用命令行，或者用 VS Code 打开该目录使用CMake Tools即可独立编译。具体的编译命令、运行方式和 GUI 操作说明请查阅各题的 README（C++ 框架 一节）：
 
-- [op_1 说明](hw_1/op_1/README.md#c-框架) — 接缝裁剪（Seam Carving）
-- [op_2 说明](hw_1/op_2/README.md#c-框架) — 地铁最短路径（Dijkstra）
-- [op_3 说明](hw_1/op_3/README.md#c-框架) — 社交网络关键节点识别
+- [x] [op_1 说明](hw_1/op_1/README.md#c-框架) — 接缝裁剪（Seam Carving）
+- [x] [op_2 说明](hw_1/op_2/README.md#c-框架) — 地铁最短路径（Dijkstra）
+- [ ] [op_3 说明](hw_1/op_3/README.md#c-框架) — 社交网络关键节点识别（尚未实现）
