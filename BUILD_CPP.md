@@ -26,11 +26,11 @@
 
 ### OpenCV
 
-[OpenCV](https://opencv.org/)（Open Source Computer Vision Library）是本项目的核心依赖库，用于图像读写、矩阵运算（`cv::Mat`）、卷积滤波（`cv::filter2D`）以及 GUI 窗口和鼠标/键盘交互（`cv::imshow`、`cv::createTrackbar` 等）。
+[OpenCV](https://opencv.org/)（Open Source Computer Vision Library）是一个开源的计算机视觉与图像处理库。本作业中的 C++ 程序主要利用 OpenCV 进行图像可视化和 简单的GUI 交互（窗口显示、鼠标点击、绘图等）。
 
 ### Visual Studio Build Tools（仅 Windows）
 
-[Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022) 提供 Windows 上的 MSVC C++ 编译器（`cl.exe`）和链接器，是在 Windows 上编译 C++ 代码的必要工具链。它是 Visual Studio IDE 的"纯命令行"子集，体积远小于完整 IDE，安装时勾选「使用 C++ 的桌面开发」即可。
+[Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022) 提供 Windows 上的 MSVC C++ 编译器和链接器，是在 Windows 上编译 C++ 代码的必要工具链。它是 Visual Studio IDE 的"纯命令行"子集，体积远小于完整 IDE，安装时勾选「使用 C++ 的桌面开发」即可。
 
 ### VS Code + CMake Tools 扩展
 
@@ -53,12 +53,14 @@ P.S. 强烈建议Windows用户参考官方教程：https://learn.microsoft.com/z
 使用 [Homebrew](https://brew.sh/) 一键安装：
 
 ```bash
+# 首次安装需要一段时间下载编译
 brew install cmake opencv
 ```
 
 ### Ubuntu / Debian
 
 ```bash
+# 首次安装需要一段时间下载编译
 sudo apt install cmake libopencv-dev
 ```
 
